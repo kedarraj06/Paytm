@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "PALS WhatsApp Capture",
+  "version": "0.1.0",
+  "description": "Sends the WhatsApp Web chat you have open (contact name, number, messages) to your PALS backend as a lead.",
+  "permissions": ["storage", "alarms", "tabs"],
+  "host_permissions": ["https://web.whatsapp.com/*", "http://localhost/*", "http://127.0.0.1/*"],
+  "optional_host_permissions": ["https://*/*", "http://*/*"],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    { "matches": ["https://web.whatsapp.com/*"], "js": ["content.js"], "run_at": "document_idle" }
+  ],
+  "action": { "default_title": "PALS", "default_popup": "popup.html" },
+  "options_page": "options.html"
+}

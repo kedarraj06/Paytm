@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <style>
+    body{width:260px;margin:0;padding:12px;font:13px/1.5 system-ui,sans-serif;color:#0f172a}
+    h1{font-size:15px;margin:0 0 8px}
+    .row{margin:6px 0;color:#475569}
+    button{width:100%;margin-top:8px;padding:7px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;cursor:pointer;font:inherit}
+    button.primary{background:#3b3a8f;color:#fff;border:0}
+    .ok{color:#15803d;font-weight:600}.bad{color:#b91c1c;font-weight:600}
+  </style>
+</head>
+<body>
+  <h1>PALS capture</h1>
+  <div class="row" id="status">Checking...</div>
+  <div class="row" id="last"></div>
+  <button id="toggle" class="primary">Pause capture</button>
+  <button id="sync">Capture the open chat now</button>
+  <button id="settings">Settings</button>
+  <script src="popup.js"></script>
+</body>
+</html>
