@@ -21,6 +21,14 @@ TX = [
      "NOT_CONFIRMED", "NOT_CONFIRMED", None, "NOT_CONFIRMED", "FAILED", "NOT_CONFIRMED", None, None),
     ("TXN-5005", "USR_KEDAR", "Shiva Singh", "SBI", None, 1200, 3, "PENDING", "P2P", "Edge: conflicting institution records",
      "CONFIRMED", "CONFIRMED", None, "CONFIRMED", "FAILED", "NOT_CONFIRMED", None, None),
+    ("TXN-5006", "USR_SHIVA", "Tejas Satish Kadam", "HDFC Bank", None, 250, 30, "PENDING", "P2P", "Demo: late reversal",
+     "CONFIRMED", "NOT_CONFIRMED", None, "PENDING", "TIMEOUT", "NOT_CONFIRMED", 2, None),
+    ("TXN-5007", "USR_TEJAS", "Chai Point Cafe", "Axis Bank", "MERCH_CHAI_POINT", 2499, 6, "PENDING", "MERCHANT", "Demo: merchant payment (WhatsApp)",
+     "CONFIRMED", "UNKNOWN", "PENDING", "PENDING", "PENDING", "NOT_CONFIRMED", 5, None),
+    ("TXN-5008", "USR_KEDAR", "Book House", "Kotak Bank", "MERCH_BOOK_HOUSE", 90, 20, "FAILED", "MERCHANT", "Demo: status mismatch (WhatsApp)",
+     "CONFIRMED", "CONFIRMED", "CONFIRMED", "CONFIRMED", "SUCCESS", "NOT_CONFIRMED", None, 3),
+    ("TXN-5009", "USR_SHIVA", "Kedarraj Bhimrao Birader", "ICICI Bank", None, 5000, 50, "PENDING", "P2P", "Demo: long overdue (WhatsApp)",
+     "CONFIRMED", "NOT_CONFIRMED", None, "PENDING", "TIMEOUT", "NOT_CONFIRMED", 12, None),
     ("TXN-4001", "USR_SHIVA", "Chai Point Cafe", "Axis Bank", "MERCH_CHAI_POINT", 60, 72, "SUCCESS", "MERCHANT", "History", "CONFIRMED", "CONFIRMED", "CONFIRMED", "CONFIRMED", "SUCCESS", "NOT_CONFIRMED", None, None),
     ("TXN-4002", "USR_TEJAS", "Kedarraj Bhimrao Birader", "ICICI Bank", None, 250, 96, "SUCCESS", "P2P", "History", "CONFIRMED", "CONFIRMED", None, "CONFIRMED", "SUCCESS", "NOT_CONFIRMED", None, None),
     ("TXN-4003", "USR_KEDAR", "Book House", "Kotak Bank", "MERCH_BOOK_HOUSE", 450, 120, "SUCCESS", "MERCHANT", "History", "CONFIRMED", "CONFIRMED", "CONFIRMED", "CONFIRMED", "SUCCESS", "NOT_CONFIRMED", None, None),
@@ -46,8 +54,54 @@ def seed_local():
     return {"users": len(USERS), "transactions": len(TX)}
 
 
+def populate_demo():
+    """Pre-run the real workflow so every dashboard page has data: cases in every state, complaints, SLA breaches, audit log, WhatsApp chats."""
+    import graph, whatsapp
+    cases = [  # (user, txn, complaint text, [days to advance])
+        ("USR_TEJAS", "TXN-5001", "I sent Rs.500 to Shiva. My bank account was debited but he did not receive the money.", [2]),
+        ("USR_KEDAR", "TXN-5002", "I paid Rs.1000 to a merchant. Debited, but the merchant says they never received it.", [4]),
+        ("USR_SHIVA", "TXN-5003", "Paytm shows payment failed but Rs.750 was deducted from my account.", [1]),
+        ("USR_TEJAS", "TXN-5004", "Payment failed but I think money was deducted.", []),
+        ("USR_KEDAR", "TXN-5005", "I sent Rs.1200 and the receiver says nothing arrived.", []),
+        ("USR_SHIVA", "TXN-5006", "Sent Rs.250 to Tejas, debited but he has not received it.", [3]),
+        ("USR_SHIVA", None, "my money is stuck please help", []),
+    ]
+    for u, t, text, days in cases:
+        s = graph.run_new(text, u, t)
+        for d in days:
+            graph.run_followup(s["case_id"], d)
+    dev = {"id": "dv_demo", "name": "Demo browser", "prefix": "pals_dev_demo...", "key_hash": "-", "status": "revoked", "created": store.now(), "captured": 0, "settings": dict(whatsapp.DEFAULTS)}
+    store.put("upi_wa_devices", dev)
+
+    def wa(phone, name, text):
+        r = whatsapp.ingest(dev, {"chat": {"name": name, "phone": phone, "saved_name": bool(name)},
+                                  "messages": [{"id": "demo:" + store.uid(), "direction": "in", "text": text, "sender": name or phone}]}, process=False)
+        return whatsapp.process_chat(r["lead_id"]) if r.get("accepted") else None
+    wa("+919820011002", "Tejas Satish Kadam", "hi")
+    r = wa("+919820011002", "Tejas Satish Kadam", "Paid Rs.2499 to Chai Point Cafe, money debited but the cafe never got it. TXN-5007")
+    wa("+919820011002", "Tejas Satish Kadam", "any update on my money?")
+    wa("+919820011003", "Kedarraj Bhimrao Birader", "Paytm shows failed but Rs.90 was deducted. TXN-5008")
+    wa("+919820011001", "Shiva Singh", "my money is stuck please help")
+    r5 = wa("+919820011001", "Shiva Singh", "Sent Rs.5000 TXN-5009, debited but receiver did not get it")
+    wa("+919000000000", "", "my payment failed and money got debited, please check")
+    # let some WhatsApp cases age, so SLA states differ
+    for cid, d in [(r5 and r5.get("case_id"), 2), (r5 and r5.get("case_id"), 2)]:
+        if cid:
+            graph.run_followup(cid, d)
+    k8 = [c for c in store.all_("upi_disputes") if c["transaction_id"] == "TXN-5008"]
+    if k8:
+        graph.run_followup(k8[0]["case_id"], 1)
+    return {"cases": len(store.all_("upi_disputes")), "chats": len(store.all_("upi_wa_chats"))}
+
+
+def seed_all():
+    r = seed_local()
+    r.update(populate_demo())
+    return r
+
+
 if __name__ == "__main__":
-    print("local:", seed_local())
+    print("local:", seed_all() if "--empty" not in sys.argv else seed_local())
     print("supabase ready:", store.check_supabase(), store.SB["error"] or "")
     if store.SB["ready"]:
         print("mirrored rows queued:", store.sync_all())

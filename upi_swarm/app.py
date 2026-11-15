@@ -149,8 +149,8 @@ def overview():
 
 
 @app.post("/api/reset")
-def reset():
-    r = seed.seed_local()
+def reset(empty: bool = False):
+    r = seed.seed_local() if empty else seed.seed_all()
     if store.SB["ready"]:
         store.sync_all()
     return r

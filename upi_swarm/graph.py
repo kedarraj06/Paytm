@@ -39,16 +39,16 @@ WORKFLOW = build()
 
 FLOW_DEF = {
     "nodes": [
-        {"id": "router", "title": "1 · Complaint Router", "kind": "agent", "x": 30, "y": 40},
-        {"id": "investigator", "title": "2 · Transaction Investigator", "kind": "agent", "x": 300, "y": 40},
-        {"id": "resolution", "title": "3 · Resolution & Routing", "kind": "agent", "x": 570, "y": 40},
-        {"id": "policy", "title": "Policy Engine (deterministic)", "kind": "policy", "x": 840, "y": 40},
-        {"id": "complaint_mgmt", "title": "4 · Complaint Management", "kind": "agent", "x": 840, "y": 250},
-        {"id": "sla", "title": "5 · SLA & Escalation", "kind": "agent", "x": 570, "y": 250},
-        {"id": "comms", "title": "6 · Customer/Merchant Comms", "kind": "agent", "x": 300, "y": 250},
-        {"id": "monitor", "title": "Case Monitoring & Closure", "kind": "system", "x": 30, "y": 250},
-        {"id": "request_info", "title": "Request Info from Customer", "kind": "system", "x": 30, "y": 440},
-        {"id": "human_review", "title": "Human Review", "kind": "human", "x": 840, "y": 440},
+        {"id": "router", "title": "1 · Complaint Router", "kind": "agent", "x": 40, "y": 50},
+        {"id": "investigator", "title": "2 · Transaction Investigator", "kind": "agent", "x": 340, "y": 50},
+        {"id": "resolution", "title": "3 · Resolution & Routing", "kind": "agent", "x": 640, "y": 50},
+        {"id": "policy", "title": "Policy Engine (deterministic)", "kind": "policy", "x": 940, "y": 50},
+        {"id": "complaint_mgmt", "title": "4 · Complaint Management", "kind": "agent", "x": 940, "y": 350},
+        {"id": "sla", "title": "5 · SLA & Escalation", "kind": "agent", "x": 640, "y": 350},
+        {"id": "comms", "title": "6 · Customer/Merchant Comms", "kind": "agent", "x": 340, "y": 350},
+        {"id": "monitor", "title": "Case Monitoring & Closure", "kind": "system", "x": 40, "y": 350},
+        {"id": "request_info", "title": "Request Info from Customer", "kind": "system", "x": 40, "y": 620},
+        {"id": "human_review", "title": "Human Review", "kind": "human", "x": 940, "y": 620},
     ],
     "edges": [
         ["router", "investigator", ""], ["router", "request_info", "info missing"], ["request_info", "monitor", ""],

@@ -10,100 +10,107 @@
 <aside class="side">
   <div class="brand"><span class="logo">PAYTM</span><b>Dispute Swarm</b><small>Autonomous UPI investigation</small></div>
   <nav id="nav">
-    <button data-tab="flow" class="on">⬡ Agent Workflow</button>
-    <button data-tab="overview">▦ Overview</button>
-    <button data-tab="whatsapp">✆ WhatsApp</button>
-    <button data-tab="new">＋ New Complaint</button>
-    <button data-tab="case">⌕ Case Investigation</button>
-    <button data-tab="complaints">✉ Complaint Tracking</button>
-    <button data-tab="sla">⏱ SLA Monitoring</button>
-    <button data-tab="activity">☰ Agent Activity</button>
+    <button data-tab="flow" class="on">Agent Workflow</button>
+    <button data-tab="overview">Overview</button>
+    <button data-tab="whatsapp">WhatsApp</button>
+    <button data-tab="new">New Complaint</button>
+    <button data-tab="case">Case Investigation</button>
+    <button data-tab="complaints">Complaints</button>
+    <button data-tab="sla">SLA Monitoring</button>
+    <button data-tab="activity">Agent Activity</button>
   </nav>
-  <div class="legend">
-    <div><i class="dot ai"></i>AI recommendation</div>
-    <div><i class="dot ev"></i>Verified evidence</div>
-    <div><i class="dot sim"></i>Simulated API response</div>
-    <div><i class="dot ok"></i>Approved action</div>
-    <div><i class="dot hu"></i>Pending human approval</div>
-  </div>
   <div id="sysbox" class="sysbox"></div>
 </aside>
 
-<main>
+<main><div class="page">
   <!-- ============ AGENT WORKFLOW ============ -->
   <section id="tab-flow" class="tab on">
-    <div class="bar">
+    <header class="ph"><h2>Agent Workflow</h2>
+      <p>Six specialised agents and a deterministic policy engine work one shared case. Pick a customer and transaction, describe the problem, and watch each agent investigate in turn.</p></header>
+    <div class="stats" id="f-stats"></div>
+    <div class="ctl">
       <div class="row">
         <select id="f-user"></select>
-        <select id="f-txn"></select>
-        <input id="f-desc" placeholder="Describe the complaint (e.g. I paid ₹500, debited but merchant didn't receive)">
-        <button class="primary" id="f-run">▶ Run workflow</button>
+        <select id="f-txn" style="min-width:340px"></select>
+        <span style="flex:1"></span>
+        <button id="f-sample">Run sample</button>
+        <button class="primary" id="f-run">Run workflow</button>
       </div>
+      <div class="row"><input id="f-desc" placeholder="Describe the complaint — e.g. I paid ₹500, my account was debited but the merchant didn't receive it"></div>
       <div class="row chips" id="f-scen"></div>
     </div>
     <div class="flowwrap">
-      <svg id="flow" viewBox="0 0 1100 560" preserveAspectRatio="xMidYMid meet">
+      <svg id="flow" viewBox="0 0 1200 720" preserveAspectRatio="xMidYMid meet">
         <defs>
-          <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#666"/></marker>
+          <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#888"/></marker>
           <marker id="arr-on" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#fff"/></marker>
         </defs>
         <g id="edges"></g><g id="blocks"></g>
       </svg>
-      <div class="inspector" id="insp"><h3>Inspector</h3><p class="muted">Run a workflow, then click any block to see what that agent found and decided. Blocks are draggable.</p></div>
     </div>
-    <div class="casebar" id="casebar"></div>
+    <div class="legend2">
+      <span><i class="dot ai"></i>AI recommendation</span><span><i class="dot ev"></i>Verified evidence</span><span><i class="dot sim"></i>Simulated API response</span>
+      <span><i class="dot ok"></i>Approved action</span><span><i class="dot hu"></i>Pending human approval</span>
+    </div>
+    <div class="hint">Click a block to expand it · drag blocks to rearrange · solid line = path taken</div>
+    <div class="casebar" id="casebar"><span class="muted">No case yet — run the workflow above.</span></div>
+    <div id="outbox"></div>
+    <div class="inspector" id="insp"><h3>Agent detail</h3><p class="muted" style="margin:0">After a run, select any block to see exactly what that agent found and decided.</p></div>
   </section>
 
   <!-- ============ OVERVIEW ============ -->
-  <section id="tab-overview" class="tab"><h2>Overview</h2><div class="cards" id="ov-cards"></div>
-    <h3>Recent cases</h3><div id="ov-cases"></div></section>
+  <section id="tab-overview" class="tab"><header class="ph"><h2>Overview</h2><p>A live picture of every dispute: how many are open, where they sit, and how the system is running.</p></header>
+    <div class="cards" id="ov-cards"></div>
+    <div class="grid2" style="margin-top:28px">
+      <div class="panel"><h3>Cases by status</h3><div class="bars" id="ov-status"></div></div>
+      <div class="panel"><h3>System</h3><dl class="kv" id="ov-system"></dl></div>
+    </div>
+    <div class="panel"><h3>Recent agent activity</h3><div class="feed" id="ov-feed"></div></div>
+    <div class="panel"><h3>Recent cases</h3><div id="ov-cases"></div></div></section>
 
   <!-- ============ WHATSAPP ============ -->
-  <section id="tab-whatsapp" class="tab"><h2>WhatsApp Inbox <span class="muted" style="font-size:13px;font-weight:400">— captured by the Chrome extension, routed into the agent workflow</span></h2>
-    <div class="grid2" style="grid-template-columns:300px 1fr 330px">
-      <div class="panel" style="padding:8px"><div id="wa-chats"></div></div>
-      <div class="panel"><div id="wa-head" class="muted">Select a chat.</div><div id="wa-msgs" style="max-height:430px;overflow:auto;margin:10px 0"></div></div>
-      <div>
-        <div class="panel"><h3 style="margin-top:0">Connect the extension</h3>
-          <ol class="muted" style="padding-left:18px;margin:0 0 8px">
-            <li>Chrome → <kbd>chrome://extensions</kbd> → Developer mode → Load unpacked → <kbd>WhatsApp/extension</kbd></li>
-            <li>Create a device key below</li>
-            <li>Extension → Settings → Backend <kbd id="wa-base"></kbd> + key → Save and test</li>
-            <li>Open web.whatsapp.com and log in</li></ol>
-          <div class="row"><input id="wa-devname" placeholder="Device name" style="min-width:120px"><button id="wa-adddev">Add device</button></div>
-          <div id="wa-newkey"></div><div id="wa-devs"></div></div>
-        <div class="panel"><h3 style="margin-top:0">Simulate incoming message</h3><p class="muted" style="margin-top:0">Test without Chrome — uses the same ingest path.</p>
-          <input id="wa-sphone" placeholder="Phone (e.g. +91 98200 11002)" style="width:100%;margin-bottom:6px">
-          <textarea id="wa-stext" rows="3" style="width:100%" placeholder="I sent Rs.500, debited but not received"></textarea>
-          <button class="primary" id="wa-ssend" style="margin-top:6px">Send as customer</button><div id="wa-sres" class="muted"></div></div>
-      </div>
+  <section id="tab-whatsapp" class="tab"><header class="ph"><h2>WhatsApp Inbox</h2><p>Messages captured by the Chrome extension. Dispute-like messages are routed into the agent workflow automatically.</p></header>
+    <div class="grid2" style="grid-template-columns:320px 1fr">
+      <div class="panel" style="padding:20px 22px"><div id="wa-chats"></div></div>
+      <div class="panel"><div id="wa-head" class="muted">Select a chat.</div><div id="wa-msgs" style="max-height:460px;overflow:auto;margin:22px 0 0"></div></div>
+    </div>
+    <div class="grid2">
+      <div class="panel"><h3>Connect the extension</h3>
+        <ol class="muted" style="padding-left:20px;margin:0 0 22px;line-height:2.1">
+          <li>Chrome → <kbd>chrome://extensions</kbd> → Developer mode → Load unpacked → <kbd>WhatsApp/extension</kbd></li>
+          <li>Create a device key below</li>
+          <li>Extension → Settings → Backend <kbd id="wa-base"></kbd> + the key → Save and test</li>
+          <li>Open web.whatsapp.com and log in</li></ol>
+        <div class="row"><input id="wa-devname" placeholder="Device name" style="min-width:160px"><button id="wa-adddev">Add device</button></div>
+        <div id="wa-newkey"></div><div id="wa-devs"></div></div>
+      <div class="panel"><h3>Simulate an incoming message</h3><p class="muted" style="margin-top:0">Test without Chrome — it uses the same ingest path as the extension.</p>
+        <div class="form" style="gap:14px"><input id="wa-sphone" placeholder="Phone (e.g. +91 98200 11002)">
+          <textarea id="wa-stext" rows="3" placeholder="I sent Rs.500, debited but not received"></textarea>
+          <div><button class="primary" id="wa-ssend">Send as customer</button></div><div id="wa-sres" class="muted"></div></div></div>
     </div></section>
 
   <!-- ============ NEW COMPLAINT ============ -->
-  <section id="tab-new" class="tab"><h2>New Complaint</h2>
+  <section id="tab-new" class="tab"><header class="ph"><h2>New Complaint</h2><p>File a complaint on a customer's behalf. The agents take it from here.</p></header>
     <div class="panel form">
-      <label>Customer<select id="n-user"></select></label>
-      <label>Select transaction<select id="n-txn"></select></label>
-      <label>…or enter transaction ID<input id="n-id" placeholder="e.g. TXN-5001 (optional)"></label>
-      <label>Complaint description<textarea id="n-desc" rows="4" placeholder="Describe what happened…"></textarea></label>
-      <button class="primary" id="n-submit">Submit complaint</button>
+      <label>CUSTOMER<select id="n-user"></select></label>
+      <label>SELECT TRANSACTION<select id="n-txn"></select></label>
+      <label>…OR ENTER A TRANSACTION ID<input id="n-id" placeholder="e.g. TXN-5001 (optional)"></label>
+      <label>WHAT HAPPENED<textarea id="n-desc" rows="4" placeholder="Describe what happened…"></textarea></label>
+      <div><button class="primary" id="n-submit">Submit complaint</button></div>
       <div id="n-result" class="muted"></div>
     </div></section>
 
   <!-- ============ CASE INVESTIGATION ============ -->
-  <section id="tab-case" class="tab"><h2>Case Investigation</h2>
-    <div class="row"><select id="c-select"></select><button id="c-refresh">↻ Refresh</button></div>
+  <section id="tab-case" class="tab"><header class="ph"><h2>Case Investigation</h2><p>Everything known about one case: the evidence, the timeline, the routing decision and every message sent.</p></header>
+    <div class="row" style="margin-bottom:40px"><select id="c-select" style="min-width:420px"></select><button id="c-refresh">Refresh</button></div>
     <div id="c-body" class="muted">Select a case.</div></section>
 
-  <!-- ============ COMPLAINTS ============ -->
-  <section id="tab-complaints" class="tab"><h2>Complaint Tracking</h2><div id="cp-body"></div></section>
-  <!-- ============ SLA ============ -->
-  <section id="tab-sla" class="tab"><h2>SLA Monitoring</h2>
-    <p class="muted">T+1 / T+5 are <b>reversal timelines</b> (investigation starts immediately). Complaint-response deadlines are tracked separately (30 days). Escalation follows the grievance hierarchy – an expired timer never jumps straight to RBI.</p>
-    <div id="sla-body"></div></section>
-  <!-- ============ ACTIVITY ============ -->
-  <section id="tab-activity" class="tab"><h2>Agent Activity</h2><div id="act-body"></div></section>
-</main>
+  <section id="tab-complaints" class="tab"><header class="ph"><h2>Complaint Tracking</h2><p>Every complaint filed with a bank, PSP or network, its latest reply, and what happens next.</p></header><div class="panel" id="cp-body"></div></section>
+  <section id="tab-sla" class="tab"><header class="ph"><h2>SLA Monitoring</h2>
+    <p>T+1 and T+5 are reversal timelines — investigation starts immediately. Complaint-response deadlines are tracked separately (30 days). An expired timer never jumps straight to the RBI; escalation follows the grievance steps.</p></header>
+    <div class="panel" id="sla-body"></div></section>
+  <section id="tab-activity" class="tab"><header class="ph"><h2>Agent Activity</h2><p>An audit trail of every step each agent took, labelled by what kind of output it was.</p></header><div class="panel" id="act-body"></div></section>
+</div></main>
 <script src="/static/app.js"></script>
 </body>
 </html>

@@ -29,9 +29,10 @@ async function boot() {
   [USERS, TXNS, FLOW] = await Promise.all([api("/api/users"), api("/api/transactions"), api("/api/flow")]);
   for (const sel of ["#f-user", "#n-user"]) $(sel).innerHTML = USERS.map(u => `<option value="${u.user_id}">${esc(u.name)}</option>`).join("");
   for (const [u, t] of [["#f-user", "#f-txn"], ["#n-user", "#n-txn"]]) { $(u).onchange = () => fillTxns(u, t); fillTxns(u, t); }
-  $("#f-scen").innerHTML = SCEN.map((s, i) => `<button data-i="${i}">${esc(s[0])}</button>`).join("");
+  $("#f-scen").innerHTML = '<span class="lab">Scenarios</span>' + SCEN.map((s, i) => `<button data-i="${i}">${esc(s[0])}</button>`).join("");
   $("#f-scen").onclick = e => { const i = e.target.dataset.i; if (i === undefined) return; const [, u, t, d] = SCEN[i]; $("#f-user").value = u; fillTxns("#f-user", "#f-txn"); $("#f-txn").value = t; $("#f-desc").value = d; };
   $("#f-run").onclick = () => runFlow($("#f-user").value, $("#f-txn").value, $("#f-desc").value, "#f-run");
+  $("#f-sample").onclick = runSample;
   $("#n-submit").onclick = submitNew;
   $("#c-select").onchange = () => loadCase($("#c-select").value);
   $("#c-refresh").onclick = () => loadCase($("#c-select").value);
@@ -45,55 +46,59 @@ function fillTxns(u, t) {
 async function refreshSys() {
   try {
     const o = await api("/api/overview");
+    $("#f-stats").innerHTML = [[o.total, "cases"], [o.open, "open"], [o.resolved, "resolved"], [o.sla_breaches, "SLA breaches"], [o.pending_responses, "awaiting institutions"], [o.avg_investigation_secs + "s", "avg investigation"]]
+      .map(([v, l]) => `<div class="stat"><b>${v}</b><span>${l}</span></div>`).join("");
     $("#sysbox").innerHTML = `Supabase mirror: <b style="color:${o.supabase.ready ? "var(--gr)" : "var(--am)"}">${o.supabase.ready ? "LIVE (" + o.supabase.mirrored + " rows)" : "tables missing"}</b><br>SLA worker ticks: <b>${o.worker.ticks}</b><br>Cases re-checked: <b>${o.worker.processed}</b>`;
   } catch { }
 }
 
 // ---------------- agent flow canvas ----------------
-const W = 232, H = 74, svgNS = "http://www.w3.org/2000/svg";
+const W = 232, H = 74, VW = 1200, VH = 720, svgNS = "http://www.w3.org/2000/svg";
+const dim = {}, orig = {};
+let expanded = null, playToken = 0, edgeState = {};
+const dm = id => dim[id] || { w: W, h: H };
+
 function initFlow() {
   FLOW.nodes.forEach(n => pos[n.id] = { x: n.x, y: n.y });
   const B = $("#blocks"); B.innerHTML = "";
   FLOW.nodes.forEach(n => {
     const g = document.createElementNS(svgNS, "g"); g.setAttribute("class", `blk ${n.kind}`); g.dataset.id = n.id;
-    g.innerHTML = `<rect class="body" width="${W}" height="${H}" rx="37"/><text class="t" x="34" y="29">${esc(n.title)}</text><text class="s" x="34" y="46" id="sub-${n.id}">idle</text><text class="s" x="34" y="60" id="st-${n.id}"></text>
-      <circle class="port" r="6" cx="0" cy="${H / 2}"/><circle class="port" r="6" cx="${W}" cy="${H / 2}"/><circle class="port" r="6" cx="${W / 2}" cy="0"/><circle class="port" r="6" cx="${W / 2}" cy="${H}"/>`;
+    g.innerHTML = `<rect class="body" width="${W}" height="${H}" rx="37"/><text class="t" x="34" y="29">${esc(n.title)}</text><text class="s" x="34" y="46" id="sub-${n.id}">idle</text><text class="s" x="34" y="60" id="st-${n.id}"></text><g class="det" id="det-${n.id}"></g>
+      <circle class="port" data-s="l" r="6" cx="0" cy="${H / 2}"/><circle class="port" data-s="r" r="6" cx="${W}" cy="${H / 2}"/><circle class="port" data-s="t" r="6" cx="${W / 2}" cy="0"/><circle class="port" data-s="b" r="6" cx="${W / 2}" cy="${H}"/>`;
     B.appendChild(g); drag(g, n.id);
-    g.onclick = () => inspect(n.id);
+    g.onclick = () => { inspect(n.id); toggle(n.id); };
   });
   place(); drawEdges();
 }
 function place() { document.querySelectorAll(".blk").forEach(g => { const p = pos[g.dataset.id]; g.setAttribute("transform", `translate(${p.x},${p.y})`); }); }
-function ctr(id) { return { x: pos[id].x + W / 2, y: pos[id].y + H / 2 }; }
+function ctr(id) { const d = dm(id); return { x: pos[id].x + d.w / 2, y: pos[id].y + d.h / 2 }; }
 function port(a, b) {
-  const A = ctr(a), Bc = ctr(b), dx = Bc.x - A.x, dy = Bc.y - A.y;
-  const pt = (id, side) => ({ x: pos[id].x + (side === "r" ? W : side === "l" ? 0 : W / 2), y: pos[id].y + (side === "b" ? H : side === "t" ? 0 : H / 2), side });
-  if (Math.abs(dx) > Math.abs(dy) * 0.9 || Math.abs(dy) < H) return dx > 0 ? [pt(a, "r"), pt(b, "l")] : [pt(a, "l"), pt(b, "r")];
+  const A = ctr(a), Bc = ctr(b), dx = Bc.x - A.x, dy = Bc.y - A.y, da = dm(a), db = dm(b);
+  const pt = (id, side) => { const d = dm(id); return { x: pos[id].x + (side === "r" ? d.w : side === "l" ? 0 : d.w / 2), y: pos[id].y + (side === "b" ? d.h : side === "t" ? 0 : d.h / 2), side }; };
+  if (Math.abs(dx) > Math.abs(dy) * 0.9 || Math.abs(dy) < (da.h + db.h) / 2) return dx > 0 ? [pt(a, "r"), pt(b, "l")] : [pt(a, "l"), pt(b, "r")];
   return dy > 0 ? [pt(a, "b"), pt(b, "t")] : [pt(a, "t"), pt(b, "b")];
 }
 function drawEdges() {
   const E = $("#edges"); E.innerHTML = "";
-  FLOW.edges.forEach(([a, b, label], i) => {
+  FLOW.edges.forEach(([a, b, label]) => {
     const [p, q] = port(a, b), h = p.side === "r" || p.side === "l";
     const c = h ? Math.max(40, Math.abs(q.x - p.x) / 2) : Math.max(40, Math.abs(q.y - p.y) / 2);
     const c1 = h ? { x: p.x + (p.side === "r" ? c : -c), y: p.y } : { x: p.x, y: p.y + (p.side === "b" ? c : -c) };
     const c2 = h ? { x: q.x + (q.side === "l" ? -c : c), y: q.y } : { x: q.x, y: q.y + (q.side === "t" ? -c : c) };
-    const path = document.createElementNS(svgNS, "path");
+    const path = document.createElementNS(svgNS, "path"), k = edgeState[a + ">" + b];
     path.setAttribute("d", `M${p.x},${p.y} C${c1.x},${c1.y} ${c2.x},${c2.y} ${q.x},${q.y}`);
-    path.setAttribute("class", "edge" + (edgeState[a + ">" + b] ? " " + edgeState[a + ">" + b] : ""));
-    path.setAttribute("marker-end", edgeState[a + ">" + b] === "on" ? "url(#arr-on)" : "url(#arr)");
+    path.setAttribute("class", "edge" + (k ? " " + k : "")); path.setAttribute("marker-end", k === "on" ? "url(#arr-on)" : "url(#arr)");
     E.appendChild(path);
     if (label) { const t = document.createElementNS(svgNS, "text"); t.setAttribute("class", "elabel"); t.setAttribute("x", (p.x + q.x) / 2 + 4); t.setAttribute("y", (p.y + q.y) / 2 - 5); t.textContent = label; E.appendChild(t); }
   });
 }
-let edgeState = {};
 function drag(g, id) {
   g.addEventListener("pointerdown", e => {
     const svg = $("#flow"), pt = svg.createSVGPoint(); let moved = false;
     const to = ev => { pt.x = ev.clientX; pt.y = ev.clientY; return pt.matrixTransform(svg.getScreenCTM().inverse()); };
     const s = to(e), o = { ...pos[id] }; g.setPointerCapture(e.pointerId); g.style.cursor = "grabbing";
-    const mv = ev => { const c = to(ev); if (Math.abs(c.x - s.x) + Math.abs(c.y - s.y) > 3) moved = true; pos[id] = { x: Math.max(0, Math.min(1100 - W, o.x + c.x - s.x)), y: Math.max(0, Math.min(560 - H, o.y + c.y - s.y)) }; place(); drawEdges(); };
-    const up = () => { g.removeEventListener("pointermove", mv); g.removeEventListener("pointerup", up); g.style.cursor = "grab"; if (moved) g.onclick = null, setTimeout(() => g.onclick = () => inspect(id), 0); };
+    const mv = ev => { const c = to(ev); if (Math.abs(c.x - s.x) + Math.abs(c.y - s.y) > 3) moved = true; const d = dm(id); pos[id] = { x: Math.max(0, Math.min(VW - d.w, o.x + c.x - s.x)), y: Math.max(0, Math.min(VH - d.h, o.y + c.y - s.y)) }; if (orig[id]) orig[id] = null; place(); drawEdges(); };
+    const up = () => { g.removeEventListener("pointermove", mv); g.removeEventListener("pointerup", up); g.style.cursor = "grab"; if (moved) { g.onclick = null; setTimeout(() => g.onclick = () => { inspect(id); toggle(id); }, 0); } };
     g.addEventListener("pointermove", mv); g.addEventListener("pointerup", up);
   });
 }
@@ -104,17 +109,116 @@ function setNode(id, cls, sub, st) {
   if (st !== undefined) $(`#st-${id}`).textContent = st.length > 34 ? st.slice(0, 33) + "…" : st;
 }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// ----- expand / collapse blocks -----
+function setDim(id, w, h) {
+  dim[id] = { w, h };
+  const g = document.querySelector(`.blk[data-id="${id}"]`), r = g.querySelector("rect.body");
+  r.setAttribute("width", w); r.setAttribute("height", h); r.setAttribute("rx", h > H ? 30 : 37);
+  const set = (s, cx, cy) => { const c = g.querySelector(`.port[data-s="${s}"]`); c.setAttribute("cx", cx); c.setAttribute("cy", cy); };
+  set("l", 0, h / 2); set("r", w, h / 2); set("t", w / 2, 0); set("b", w / 2, h);
+  place(); drawEdges();
+}
+function expand(id, lineCount) {
+  if (expanded && expanded !== id) collapse(expanded, true);
+  const w = 336, h = 56 + lineCount * 15 + 16;
+  if (!orig[id]) orig[id] = { ...pos[id] };
+  pos[id] = { x: Math.max(8, Math.min(pos[id].x, VW - w - 8)), y: Math.max(8, Math.min(pos[id].y, VH - h - 8)) };
+  const g = document.querySelector(`.blk[data-id="${id}"]`); $("#blocks").appendChild(g);
+  g.classList.add("open"); setDim(id, w, h); expanded = id;
+  $(`#sub-${id}`).style.display = "none"; $(`#st-${id}`).style.display = "none";
+}
+function collapse(id, keepLines) {
+  const g = document.querySelector(`.blk[data-id="${id}"]`); if (!g) return;
+  if (orig[id]) { pos[id] = orig[id]; orig[id] = null; }
+  g.classList.remove("open"); setDim(id, W, H);
+  $(`#det-${id}`).innerHTML = ""; $(`#sub-${id}`).style.display = ""; $(`#st-${id}`).style.display = "";
+  if (expanded === id) expanded = null;
+}
+function addLine(id, text, kind, idx) {
+  const t = document.createElementNS(svgNS, "text");
+  t.setAttribute("class", "dl " + (kind || "")); t.setAttribute("x", 26); t.setAttribute("y", 62 + idx * 15);
+  t.textContent = text.length > 54 ? text.slice(0, 53) + "…" : text; $(`#det-${id}`).appendChild(t);
+}
+function toggle(id) {
+  if (expanded === id) { collapse(id); return; }
+  const items = nodeTrace[id]; if (!items) return;
+  const lines = stepsFor(items[items.length - 1]); expand(id, lines.length);
+  lines.forEach((l, i) => addLine(id, l[0], l[1], i));
+}
+
+// ----- what each agent is doing, derived from its real output -----
+function stepsFor(t) {
+  const o = t.output || {}, L = [], s = x => x === "CONFIRMED" ? "✓" : x === "NOT_CONFIRMED" ? "✗" : x === "PENDING" ? "…" : "?";
+  const clean = x => String(x ?? "-").replaceAll("_", " ");
+  switch (t.node) {
+    case "router": {
+      const c = o.claims || {};
+      L.push(["Reading the complaint text"]);
+      L.push([`Transaction ${o.transaction_id || "not found"} · ${o.amount ? inr(o.amount) : "amount unknown"}`]);
+      L.push([`Customer claims (unverified): ${[c.customer_debit_claim && "debited", c.merchant_credit_claim === false && "not received", c.app_shows_failed_claim && "app shows failed"].filter(Boolean).join(", ") || "none"}`]);
+      if (o.missing_information?.length) L.push([`Missing: ${o.missing_information.map(clean).join(", ")}`, "bad"]);
+      L.push([`Issue type: ${clean(o.issue_type)}`]); L.push([`Case ${o.case_id} opened`, "final"]); break;
+    }
+    case "investigator":
+      L.push([`→ Paytm record: app shows ${o.paytm_app_status}`]);
+      L.push([`→ Customer bank: debit ${s(o.customer_debit)} ${clean(o.customer_debit)}`]);
+      L.push([`→ Beneficiary bank: credit ${s(o.beneficiary_credit)} ${clean(o.beneficiary_credit)}`]);
+      L.push([`→ PSP: ${s(o.psp_status)} ${clean(o.psp_status)}   → NPCI: ${s(o.npci_status)} ${clean(o.npci_raw || o.npci_status)}`]);
+      if (o.kind === "MERCHANT") L.push([`→ Merchant/acquirer: ${s(o.merchant_confirmation)} ${clean(o.merchant_confirmation)}`]);
+      L.push([`→ Reversal ledger: ${s(o.reversal_status)} ${clean(o.reversal_status)}`]);
+      (o.conflicts || []).forEach(c => L.push([`⚠ ${c}`, "bad"]));
+      L.push([`Last confirmed state: ${clean(o.last_confirmed_state)}`, "final"]);
+      L.push([`Evidence confidence: ${o.evidence_confidence}${o.missing_evidence?.length ? " · missing " + o.missing_evidence.length : ""}`]); break;
+    case "resolution":
+      L.push(["Matching evidence against dispute rules"]); L.push([`Category: ${clean(o.issue_category)}`]); L.push([`Why: ${o.reason}`]);
+      L.push([`Next party: ${clean(o.responsible_next_party)}`]); L.push([`Channel: ${o.recommended_channel || "none"} · ${clean(o.recommended_action)}`]);
+      L.push([`Timeline: ${o.applicable_sla}${o.requires_human_review ? " · needs human review" : ""}`, "final"]); break;
+    case "policy":
+      (o.checks || []).forEach(c => L.push([`${c.passed ? "✓" : "✗"} ${clean(c.check)}`, c.passed ? "" : "bad"]));
+      L.push([`Decision: ${clean(o.decision)}`, "final"]); break;
+    case "complaint_mgmt": {
+      const p = o.response?.payload;
+      if (p) { L.push(["Drafting structured complaint"]); L.push([`Subject: ${p.subject}`]); L.push([`Evidence attached: ${Object.keys(p.evidence || {}).length} items`]); L.push([`Submitting → ${p.target_endpoint}`]); }
+      else L.push(["Checking existing complaint (no duplicate filed)"]);
+      L.push([`Reference: ${o.external_reference} → ${clean(o.institution)}`]);
+      L.push([`Institution: ${o.response?.message || clean(o.submission_status)}`]);
+      if (o.followup) L.push([`Follow-up: ${o.followup}`]);
+      L.push([`Status: ${clean(o.submission_status)}`, "final"]); break;
+    }
+    case "sla":
+      L.push([`Applicable TAT: ${o.label || "n/a"}`]); if (o.deadline) L.push([`Deadline: ${o.deadline.replace("T", " ").slice(0, 16)}`]);
+      L.push([`Elapsed ${o.elapsed_days}d${o.remaining_days != null ? " · remaining " + o.remaining_days + "d" : ""}`]);
+      L.push([`Status: ${clean(o.status)}`]);
+      if (o.compensation_status && o.compensation_status !== "NOT_APPLICABLE") L.push([`Potential compensation: ${inr(o.potential_compensation_inr)} (${clean(o.compensation_status)})`]);
+      if (o.escalation?.reason) L.push([o.escalation.reason]);
+      L.push([o.next_action || "continue monitoring", "final"]); break;
+    case "comms":
+      L.push(["Drafting customer update"]); L.push([`"${(o.customer || "").slice(0, 80)}…"`]);
+      if (o.merchant) L.push(["Merchant notice (no customer data)"]);
+      L.push([`Sent (simulated): ${(o.customer ? "customer" : "")}${o.merchant ? ", merchant" : ""}`, "final"]); break;
+    case "monitor": L.push(["Saving case state to the database"]); L.push(["Writing audit trail"]); L.push([`Case status → ${clean(o.status)}`, "final"]); break;
+    default: L.push([t.summary || "working", "final"]);
+  }
+  return L;
+}
+
 async function playTrace(trace) {
+  const token = ++playToken;
+  if (expanded) collapse(expanded);
   FLOW.nodes.forEach(n => setNode(n.id, "skipped", "not used", "")); edgeState = {}; nodeTrace = {}; drawEdges();
   let prev = null;
   for (const t of trace) {
+    if (token !== playToken) return;
     (nodeTrace[t.node] ||= []).push(t);
-    setNode(t.node, "running", "working…", "");
+    setNode(t.node, "running", "", "");
     if (prev) { edgeState[prev + ">" + t.node] = "on"; drawEdges(); }
-    await sleep(650);
+    const lines = stepsFor(t); expand(t.node, lines.length); inspect(t.node);
+    for (let i = 0; i < lines.length; i++) { if (token !== playToken) return; addLine(t.node, lines[i][0], lines[i][1], i); await sleep(lines[i][1] === "final" ? 380 : 230); }
     const waiting = t.node === "human_review";
     setNode(t.node, waiting ? "waiting" : "done", t.summary, t.label);
     if (prev) { edgeState[prev + ">" + t.node] = "used"; drawEdges(); }
+    await sleep(350);
     prev = t.node;
   }
 }
@@ -124,13 +228,23 @@ function inspect(id) {
 }
 
 async function runFlow(user, txn, desc, btn) {
-  const b = $(btn); b.disabled = true; b.textContent = "Running…";
+  const b = $(btn); b.disabled = true; const old = b.textContent; b.textContent = "Running…";
   try {
     const r = await api("/api/complaints", { user_id: user, transaction_id: txn || null, description: desc });
-    currentCase = r.case_id; await playTrace(r.trace); renderCaseBar(r.state, r.case_id);
+    currentCase = r.case_id; $("#outbox").innerHTML = ""; await playTrace(r.trace); renderCaseBar(r.state, r.case_id); renderOutput(r.state);
     TXNS = await api("/api/transactions");
     return r;
-  } catch (e) { alert(e.message); } finally { b.disabled = false; b.textContent = btn === "#f-run" ? "▶ Run workflow" : "Submit complaint"; }
+  } catch (e) { alert(e.message); } finally { b.disabled = false; b.textContent = old; }
+}
+function renderOutput(s) {
+  const inv = s.investigation, res = s.resolution, sla = s.sla || {}, c = s.complaint, cm = s.comms, cl = x => esc(String(x ?? "-").replaceAll("_", " "));
+  if (!inv || !res) { $("#outbox").innerHTML = `<div class="out"><div class="oc wide"><small>Output</small><b>${cl(s.status)}</b><p>${cl((s.router?.missing_information || []).join(", "))} — the customer was asked for more details.</p></div></div>`; return; }
+  $("#outbox").innerHTML = `<div class="out">
+    <div class="oc"><small>1 · What happened to the money?</small><b>${cl(inv.last_confirmed_state)}</b><p>${esc(inv.summary)}</p></div>
+    <div class="oc"><small>2 · Who must act next?</small><b>${cl(res.responsible_next_party)}</b><p>${esc(res.reason)}</p></div>
+    <div class="oc"><small>3 · What next, and by when?</small><b>${cl(res.recommended_action)}</b><p>${esc(sla.label || "")} ${sla.deadline ? "· deadline " + esc(sla.deadline.replace("T", " ").slice(0, 16)) : ""} ${sla.status ? chip(sla.status) : ""}</p></div>
+    <div class="oc wide"><small>Message sent to customer (simulated)</small><p>${esc(cm?.customer || "")}</p>${c ? `<p class="muted">Complaint ${esc(c.external_reference)} → ${cl(c.institution)} · case ${esc(s.case_id)}</p>` : ""}
+      <div class="pills"><span class="chip">confidence ${esc(inv.evidence_confidence)}</span><span class="chip">${esc(inv.kind === "MERCHANT" ? "merchant payment" : "peer transfer")}</span>${res.recommended_channel ? `<span class="chip">channel ${esc(res.recommended_channel)}</span>` : ""}${(inv.missing_evidence || []).map(m => `<span class="chip UNKNOWN">missing ${cl(m).toLowerCase()}</span>`).join("")}${sla.escalation?.level ? `<span class="chip HUMAN_REVIEW">${cl(sla.escalation.level)}</span>` : ""}${sla.potential_compensation_inr ? `<span class="chip POTENTIAL">potential compensation ${inr(sla.potential_compensation_inr)}</span>` : ""}</div></div></div>`;
 }
 function renderCaseBar(s, id) {
   const sla = s.sla, c = s.complaint;
@@ -142,9 +256,16 @@ function renderCaseBar(s, id) {
     const d = e.target.dataset; if (!d.adv && !d.ap && !d.view) return;
     if (d.view) { show("case"); loadCaseList(id); return; }
     const r = await api(`/api/cases/${id}/advance`, { days: +d.adv || 0, human_approved: d.ap ? true : null });
-    await playTrace(r.trace); renderCaseBar(r.state, id);
+    $("#outbox").innerHTML = ""; await playTrace(r.trace); renderCaseBar(r.state, id); renderOutput(r.state);
   };
 }
+let sampleI = 0;
+function runSample() {
+  const i = sampleI++ % 5, [, u, t, d] = SCEN[i];
+  $("#f-user").value = u; fillTxns("#f-user", "#f-txn"); $("#f-txn").value = t; $("#f-desc").value = d;
+  runFlow(u, t, d, "#f-sample");
+}
+
 
 // ---------------- new complaint ----------------
 async function submitNew() {
@@ -159,9 +280,17 @@ async function runFlowQuiet(u, t, d) { return api("/api/complaints", { user_id: 
 
 // ---------------- overview ----------------
 async function loadOverview() {
-  const o = await api("/api/overview"); const cs = await api("/api/cases");
+  const [o, cs, au, chats, devs] = await Promise.all([api("/api/overview"), api("/api/cases"), api("/api/audit?limit=7"), api("/api/wa/chats"), api("/api/devices")]);
   const card = (v, l) => `<div class="card"><div class="v">${v}</div><div class="l">${l}</div></div>`;
-  $("#ov-cards").innerHTML = card(o.total, "Total disputes") + card(o.open, "Open cases") + card(o.resolved, "Resolved / closed") + card(o.pending_responses, "Pending institution responses") + card(o.sla_breaches, "SLA breaches") + card(o.avg_investigation_secs + "s", "Avg investigation time");
+  $("#ov-cards").innerHTML = card(o.total, "Total disputes") + card(o.open, "Open cases") + card(o.resolved, "Resolved or closed") + card(o.pending_responses, "Awaiting institution reply") + card(o.sla_breaches, "SLA breaches") + card(o.avg_investigation_secs + "s", "Avg investigation time");
+  const by = {}; cs.forEach(c => by[c.status] = (by[c.status] || 0) + 1);
+  const max = Math.max(1, ...Object.values(by));
+  $("#ov-status").innerHTML = Object.entries(by).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<div class="b"><span>${esc(k.replaceAll("_", " ").toLowerCase())}</span><div class="bar-track"><div class="bar-fill" style="width:${v / max * 100}%"></div></div><span>${v}</span></div>`).join("") || `<p class="muted">No cases yet.</p>`;
+  const live = devs.filter(d => d.status === "active").length;
+  $("#ov-system").innerHTML = [["Supabase", o.supabase.ready ? `live · ${o.supabase.mirrored} rows mirrored` : "tables not created yet"], ["Neo4j graph", "connected (Aura)"],
+    ["WhatsApp", `${chats.length} chats · ${live} active device${live === 1 ? "" : "s"}`], ["SLA worker", `${o.worker.ticks} checks · ${o.worker.processed} cases re-evaluated`],
+    ["Policy engine", "deterministic · always on"], ["Mode", "simulated institutions"]].map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join("");
+  $("#ov-feed").innerHTML = au.map(x => `<div class="f"><span class="t">${esc(x.ts.slice(11, 19))}</span><span><b>${esc(x.agent_name)}</b></span><span>${esc(x.output_summary)}</span></div>`).join("") || `<p class="muted">No activity yet.</p>`;
   $("#ov-cases").innerHTML = caseTable(cs.slice(0, 8));
   bindRows();
 }
@@ -243,7 +372,7 @@ async function loadSla() {
 async function loadActivity() {
   const a = await api("/api/audit");
   $("#act-body").innerHTML = `<table><tr><th>Time</th><th>Case</th><th>Agent</th><th>Label</th><th>What it did</th></tr>` +
-    a.map(x => `<tr><td class="muted">${esc(x.ts.slice(11, 19))}</td><td>${esc(x.case_id)}</td><td><b>${esc(x.agent_name)}</b></td><td>${badge(x.label)}</td><td>${esc(x.output_summary)}</td></tr>`).join("") + "</table>";
+    a.slice(0, 50).map(x => `<tr><td class="muted">${esc(x.ts.slice(11, 19))}</td><td>${esc(x.case_id)}</td><td><b>${esc(x.agent_name)}</b></td><td>${badge(x.label)}</td><td>${esc(x.output_summary)}</td></tr>`).join("") + "</table>";
 }
 
 // ---------------- whatsapp ----------------
@@ -251,7 +380,7 @@ let waChat = null, waTimer = null;
 async function loadWa() {
   $("#wa-base").textContent = location.origin;
   const chats = await api("/api/wa/chats");
-  $("#wa-chats").innerHTML = chats.length ? chats.map(c => `<div class="msg" style="cursor:pointer;${c.chat_key === waChat ? "border-color:#fff" : ""}" data-k="${esc(c.chat_key)}">
+  $("#wa-chats").innerHTML = chats.length ? chats.map(c => `<div class="msg" style="cursor:pointer;${c.chat_key === waChat ? "border-color:var(--tx)" : ""}" data-k="${esc(c.chat_key)}">
       <b>${esc(c.name)}</b> <span class="muted">${esc(c.phone || "")}</span><br><span class="muted">${esc((c.last_direction === "out" ? "↗ " : "") + (c.last_message || ""))}</span><br>
       ${c.user_name ? `<span class="chip s-ok">${esc(c.user_name)}</span>` : `<span class="chip PENDING">unlinked</span>`}${c.cases.map(k => ` <span class="chip ${k.status}">${k.case_id}</span>`).join("")}${c.pending ? ` <span class="chip HUMAN_REVIEW">${c.pending} pending</span>` : ""}</div>`).join("")
     : `<p class="muted" style="padding:8px">No chats yet. Pair the extension or use the simulator.</p>`;
@@ -264,7 +393,7 @@ async function loadWa() {
     $("#wa-link").onchange = async e => { await api("/api/wa/link", { chat_key: c.chat_key, user_id: e.target.value || null }); loadWa(); };
     document.querySelectorAll("#wa-head a[data-case]").forEach(a => a.onclick = e => { e.preventDefault(); show("case"); loadCaseList(a.dataset.case); });
     const ms = await api("/api/wa/chats/" + encodeURIComponent(c.chat_key) + "/messages");
-    $("#wa-msgs").innerHTML = ms.map(m => `<div style="display:flex;justify-content:${m.direction === "in" ? "flex-start" : "flex-end"};margin:6px 0"><div class="msg" style="max-width:75%;border-color:${m.direction === "in" ? "#333" : "#fff"}">
+    $("#wa-msgs").innerHTML = ms.map(m => `<div style="display:flex;justify-content:${m.direction === "in" ? "flex-start" : "flex-end"};margin:6px 0"><div class="msg" style="max-width:75%;border-color:${m.direction === "in" ? "var(--line)" : "var(--tx)"}">
       <span class="muted" style="font-size:11px">${esc(m.direction === "in" ? "customer" : m.sender)} ${m.case_id ? "· " + esc(m.case_id) : ""}</span><br>${esc(m.text)}</div></div>`).join("");
     const box = $("#wa-msgs"); box.scrollTop = box.scrollHeight;
   }

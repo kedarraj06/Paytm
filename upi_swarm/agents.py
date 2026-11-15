@@ -248,6 +248,8 @@ def _sla_calc(state, complaint=None):
     g = store.get("upi_ground_truth", t["transaction_id"]) or {}
     if inv["reversal_status"] == "CONFIRMED":
         rev_day = g.get("reversal_day")
+    elif res["issue_category"] == "STATUS_RECONCILED":
+        rev_day = g.get("reconcile_day")
     resolved = res["issue_category"] in CLOSE_CATEGORIES
     over = max(0.0, (rev_day if (resolved and rev_day is not None) else el) - days)
     if resolved:
